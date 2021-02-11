@@ -190,7 +190,7 @@ def read_ca_tfrecord(example):
     img = tf.concat([bands_10m, bands_20m], axis=2)
     
     return img, 0
-  
+
 def get_batched_dataset(filenames, batch_size, augment=False, simclr=False, ca=False):
     '''
     This function is used to return a batch generator for training our tensorflow model.
