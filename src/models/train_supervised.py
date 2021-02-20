@@ -18,22 +18,19 @@ import constants
 
 import tensorflow_addons as tfa
 
-
-print(f'Using TensorFlow Version: {tf.__version__}')
 # sns.set()
-
 # Set Paths
 BASE_PATH = '/workspace/app'
 OUTPUT_PATH = os.path.join(BASE_PATH, 'models/supervised')
 TFR_PATH = os.path.join(BASE_PATH, 'data/processed')
 
 
-def get_training_dataset(training_filenames, batch_size):
-    return get_batched_dataset(training_filenames, batch_size, shuffle=True)
+def get_training_dataset(training_filenames, batch_size, num_classes):
+    return get_batched_dataset(training_filenames, batch_size, shuffle=True, num_classes=num_classes)
 
 
-def get_validation_dataset(validation_filenames, batch_size):
-    return get_batched_dataset(validation_filenames, batch_size, shuffle=False)
+def get_validation_dataset(validation_filenames, batch_size, num_classes):
+    return get_batched_dataset(validation_filenames, batch_size, shuffle=False, num_classes=num_classes)
 
 
 METRICS = [
@@ -45,14 +42,13 @@ METRICS = [
     tf.keras.metrics.Precision(name='precision'),
     tf.keras.metrics.Recall(name='recall'),
     tf.keras.metrics.AUC(name='auc'),
-    tfa.metrics.F1Score(name='tfa_f1', num_classes=1),
-    tfa.metrics.FBetaScore(name='tfa_f05', num_classes=1, beta=0.5),
-    tfa.metrics.FBetaScore(name='tfa_f2', num_classes=1, beta=2.0),
-    tfa.metrics.FBetaScore(name='tfa_f6', num_classes=1, beta=6.0)
-
+    # tfa.metrics.F1Score(name='tfa_f1', num_classes=43),
+    # tfa.metrics.FBetaScore(name='tfa_f05', num_classes=1, beta=0.5),
+    # tfa.metrics.FBetaScore(name='tfa_f2', num_classes=43),    # tfa.metrics.FBetaScore(name='tfa_f2', num_classes=1, beta=2.0), beta=2.0),
+    # tfa.metrics.FBetaScore(name='tfa_f6', num_classes=1, beta=6.0)
 ]
 
-def build_model(imported_model, use_pretrain, output_activation, metrics=METRICS, output_bias=None):
+def build_model(imported_model, use_pretrain, output_activation, metrics=METRICS, output_bias=None, num_classes=1):
     if output_bias is not None:
         output_bias = tf.keras.initializers.Constant(output_bias)
     if use_pretrain:
@@ -71,18 +67,19 @@ def build_model(imported_model, use_pretrain, output_activation, metrics=METRICS
     h2 = tf.keras.layers.Dense(512, activation='elu')(h1)
     h2 = tf.keras.layers.Dropout(0.25)(h2)
     clf = tf.keras.layers.Dense(256, activation='elu')(h2)
-    # output = tf.keras.layers.Dense(1, activation=output_activation,
-    #                                bias_initializer=output_bias)(clf)
-
-    output = tf.keras.layers.Dense(1, activation=output_activation, bias_initializer=output_bias)(clf)
-
+    output = tf.keras.layers.Dense(num_classes, activation=output_activation, bias_initializer=output_bias)(clf)
 
     # define new model
     model = tf.keras.models.Model(inputs=model.inputs, outputs=output)
 
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(),
-                  optimizer='adam',
-                  metrics=metrics)
+    if num_classes > 1:
+        model.compile(loss=tf.keras.losses.CategoricalCrossentropy(),
+                      optimizer='sgd',
+                      metrics=metrics)
+    else:
+        model.compile(loss=tf.keras.losses.BinaryCrossentropy(),
+                      optimizer='adam',
+                      metrics=metrics)
     #   print(f'Trainable variables: {model.trainable_weights}')
 
     return model
@@ -143,7 +140,8 @@ def _random_apply(func, x, p):
         lambda: x)
 
 
-def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrain=False, augment=False, percent=10, evaluate=False, downsample="50/50", activation="sigmoid"):
+def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrain=False, augment=False,
+              percent=10, evaluate=False, downsample="50/50", activation="sigmoid", num_classes=1):
 
     # "50/50, 10/90, no"
     test_filenames = os.path.join(TFR_PATH, "original", constants.IMBALANCED_TEST_FILENAMES)
@@ -168,7 +166,6 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
         validation_filenames = os.path.join(TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_VALIDATION_FILENAMES)
         # test_filenames = os.path.join(TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_TEST_FILENAMES)
     else:
-        print("upweight is disabled")
         upweight = False
         # using imbalanced dataset
         train_size = (constants.IMBALANCED_TRAIN_SIZE // 100) * percent
@@ -211,27 +208,35 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
 
     else:
         class_weight = None
-        print("Not Using Weights")
 
-    training_data = get_training_dataset(training_filenames, batch_size=batch_size)
-    val_data = get_validation_dataset(validation_filenames, batch_size=batch_size)
+    training_data = get_training_dataset(training_filenames, batch_size=batch_size, num_classes=num_classes)
+    val_data = get_validation_dataset(validation_filenames, batch_size=batch_size, num_classes=num_classes)
 
     steps_per_epoch = train_size // batch_size
     validation_steps = val_size // batch_size
 
     # Use an early stopping callback and our timing callback
-    early_stop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_auc',
-        verbose=1,
-        patience=15,
-        mode='max',
-        restore_best_weights=True)
+    if num_classes == 1:
+        early_stop = tf.keras.callbacks.EarlyStopping(
+            monitor='val_auc',
+            verbose=1,
+            patience=15,
+            mode='max',
+            restore_best_weights=True)
+    else:
+        early_stop = tf.keras.callbacks.EarlyStopping(
+            monitor='val_precision',
+            verbose=1,
+            patience=15,
+            mode='max',
+            restore_best_weights=True)
 
     time_callback = TimeHistory()
 
     model = build_model(imported_model=architecture,
                         use_pretrain=pretrain,
-                        output_activation=activation
+                        output_activation=activation,
+                        num_classes=num_classes
                         )
 
     if augment:
@@ -278,7 +283,7 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
     # model.save(f'{OUTPUT_PATH}/{name}.h5')
 
     if evaluate:
-        test_data = get_validation_dataset(test_filenames, batch_size=batch_size)
+        test_data = get_validation_dataset(test_filenames, batch_size=batch_size, num_classes=num_classes)
         test_steps = test_size // batch_size
 
         # callback on evaluation seems to override validation results (maybe that is good things)
@@ -296,10 +301,10 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
         wandb.run.summary["test_precision"] = perf[6]
         wandb.run.summary["test_recall"] = perf[7]
         wandb.run.summary["test_auc"] = perf[8]
-        wandb.run.summary["test_tfa_f1"] = perf[9]
-        wandb.run.summary["test_tfa_f05"] = perf[10]
-        wandb.run.summary["test_tfa_f2"] = perf[11]
-        wandb.run.summary["test_tfa_f6"] = perf[12]
+        # wandb.run.summary["test_tfa_f1"] = perf[9]
+        # wandb.run.summary["test_tfa_f05"] = perf[10]
+        # wandb.run.summary["test_tfa_f2"] = perf[10]
+        # wandb.run.summary["test_tfa_f6"] = perf[12]
 
         if (perf[6] + perf[7]) == 0:
             wandb.run.summary["test_f1"] = 0
@@ -342,32 +347,20 @@ if __name__ == '__main__':
     #                     help="use imagenet pretrained model")
     parser.add_argument('-d', '--downsample', default="50/50", type=str,
                         help="50/50, 10/90, no")
-
+    parser.add_argument('-c', '--classes', default="binary", type=int,
+                        help="bnumber of classes. 1 or 43")
     parser.add_argument('-o', '--output_activation', default='sigmoid', choices=['sigmoid', 'softmax', 'relu', 'tanh'],
                         help='output layer of activation func to use for classification')
 
     args = parser.parse_args()
 
-    # Start a W&B run
-    # name = f"BE supervised {architecture} b{batch_size} e{epochs}"
-    # wandb.init(project="irrigation_detection", name=name)
-    wandb.init(project="irrigation_detection", entity="cal-capstone")
-    # wandb.config.epochs = epochs
-    # wandb.config.batch_size = batch_size
-    # wandb.config.architecture = architecture
-    # wandb.config.update({'dataset.percent': percent})
+    if args.classes == 1:
+        wandb.init(project="irrigation_detection", entity="cal-capstone")
+    else:
+        wandb.init(project="BigEarthNet_Classification", entity="cal-capstone")
 
     wandb.config.update(args)  # adds all of the arguments as config variables
-
-    # if args.imbalanced:
-    #     wandb.config.update({'dataset': 'balanced'})
-    # else:
-    #     wandb.config.update({'dataset': 'imbalanced'})
-
     wandb.config.update({'framework': f'TensorFlow {tf.__version__}'})
-
-    print("upweights:", args.upweight)
-    print("output_activation", args.output_activation)
 
     run_model(batch_size=args.batch_size,
               epochs=args.epochs,
@@ -378,7 +371,8 @@ if __name__ == '__main__':
               percent=args.percent,
               evaluate=args.test,
               downsample=args.downsample,
-              activation=args.output_activation
+              activation=args.output_activation,
+              num_classes=args.classes
               )
 
 
