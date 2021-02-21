@@ -70,25 +70,30 @@ Figure: AUC and F-1 score performance on test set varying the number of training
 | 3% | 0.6664 (0.7113/0.6268)| 
 | 5% | 0.6884 (0.767/0.6245) | 
 | 10% | 0.7147 (0.79/0.6525) | 
-| 100% |   | 
+| 100% | 0.7499 (0.7965/0.7085)  | 
+
+Figure: F-1 score performance on test set varying the number of training set. Result is also available [W&B daishboard](https://wandb.ai/cal-capstone/bigearthnet_classification)  
 
 #### To Reproduce 
 1. Follow the [setup](references/setup.md) and [data pipeline](references/ML_pipeline.md) to prepare the docker container and datasets.
 2. Train the model using the following command. 
 	```
 	pip install --upgrade wandb
-	wandb login e96802b17d8e833421348df053b41a538a810177
+	wandb login <your wandb apikey>
 	python train_supervised.py -a ARCH -e EPOCHS -b BATCH -p PERCENT -d DOWNSAMPLE -t TEST -c CLASSES
 	``` 
-	- ARCH is 'InceptionV3', 'ResNet50', 'Xception', or 'ResNet101V2'
-	- EPOCHS is number of epochs to run (50 is default)
-	- BATCH is batch size (default is 32). 
-	- AUGMENT is true or false (whether to use data augmentation). (augment is not supported as of now) 
-	- PERCENT is the portion of dataset to be used for training and validation
-	- TEST is true or false (whether to run evaluation on the test set with the trained model at the end)
-	- DOWNSAMPLE is to pick datasets which has been downsampled. `50/50`, `10/90`, or `no`. 
-	- CLASSES: 1 (binary classification for irrigation land) or 43 (multi-class calssficiation)  
-	- For example, ```python train_supervised.py -a InceptionV3 -e 50 -b 32 -g False -p 1```  
+	- *ARCH* is `InceptionV3`, `ResNet50`, `Xception`, or `ResNet101V2`
+	- *EPOCHS* is number of epochs to run (50 is default)
+	- *BATCH* is batch size (default is `32`). 
+	- *AUGMENT* is `true` or `false` (whether to use data augmentation). (augment is not supported as of now) 
+	- *PERCENT* is the portion of dataset to be used for training and validation
+	- *TEST* is `true` or `false` (whether to run evaluation on the test set with the trained model at the end)
+	- *DOWNSAMPLE* is to pick datasets which has been downsampled. `50/50`, `10/90`, or `no`. 
+	- *CLASSES*: `1` (binary classification for irrigation land) or `43` (multi-class calssficiation)  
+	- For example, the following command will train a model with 50 epochs, 32 batch size, no augmentation, 10% of 50/50 downsampled set with test evaluation on binary classification. 
+		```
+		python train_supervised.py -a InceptionV3 -e 50 -b 32 -g 0 -p 10 -d 50/50 -t 1 -c 1
+		```  
 
 ## Notes on Data Augmentation
 Data augmentation is tested on our supervised model to ensure that:
