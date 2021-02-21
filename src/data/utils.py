@@ -1,5 +1,11 @@
 import argparse
 import math
+import os
+import csv
+import json
+import numpy as np
+import os
+from glob import glob
 
 """
 # Sample metadata from BigEarthNet dataset
@@ -58,6 +64,50 @@ def convert_utm_to_latlng(zone, easting, northing):
 
     return (latitude, longitude)
 
+# Parse the fMoW dataset metadata files and images, and create a csv file indicating image name location, timestamp, and country
+def parse_fmow_dataset(root_folder = "/workspace/app/data/raw/fMoW/fmow-rgb", csv_file="fmow-rgb-all-train-testing.csv"):
+    folder_path_list = []
+    csv_file_to_parse = os.path.join(root_folder, csv_file)
+    if not os.path.exists(csv_file_to_parse):
+        print('ERROR: file', csv_file_to_parse, 'does not exist')
+
+    splits = glob(f"{csv_file_to_parse}")
+    patch_names_list = []
+    for file in splits:
+        print(file)
+        with open(file, 'r') as fp:
+            csv_reader = csv.reader(fp, delimiter=',')
+            for row in csv_reader:
+                patch_names_list.append(row[0].strip())
+    print(patch_names_list)
+
+    # writing to csv file
+    with open("temp.csv", 'w', newline='') as csvfile:
+        # creating a csv writer object
+        csvwriter = csv.writer(csvfile)
+        # Parse each json file
+        lt_ln_data = {}
+        image_files = []
+        for patch_file in patch_names_list:
+            file_name_split = patch_file.split('.')
+            if file_name_split[1] == ('json'):
+                print(patch_file)
+                patch_path = os.path.join(root_folder, patch_file)
+                print("loading file ",os.path.abspath(patch_path))
+                with open(os.path.abspath(patch_path)) as f:
+                    patch = json.load(f)
+                    raw_location = patch["bounding_boxes"][0]["raw_location"]
+                    coordinates_string = raw_location[10:].split(',')
+                    coordinates = coordinates_string[0].split(' ')
+                    lt_ln_data[file_name_split[0]] = {"latitude":coordinates[1], "longitude":coordinates[0],
+                                                      "timestamp":patch["timestamp"], "country_code":patch["country_code"]}
+            else:
+                image_files.append({file_name_split[0]:patch_file})
+        for image_file in image_files:
+            ltln_data = lt_ln_data[list(image_file.keys())[0]]
+            csvwriter.writerow(
+                [list(image_file.values())[0], ltln_data["latitude"], ltln_data["longitude"], ltln_data["timestamp"],
+                 ltln_data["country_code"]])
 
 if __name__ == "__main__":
     def str2bool(v):
@@ -81,9 +131,23 @@ if __name__ == "__main__":
                         help="what's the easting? Ex: 540780")
     parser.add_argument('-n', '--northing', type=int,
                         help="what's the easting? Ex: 4312440")
+
+    # parse fmow dataset
+    parser.add_argument('-pfm', '--parsefmow', default=False, type=str2bool,
+                        help="whether parse fmow file")
+    parser.add_argument('-pfmfd', '--parsefmowfolder', default="/workspace/app/data/raw/fMoW/fmow-rgb", type=str,
+                        help="fmow file")
+    parser.add_argument('-pfmfl', '--parsefmowfile', type=str,
+                        help="fmow file")
+
     args = parser.parse_args()
 
     if args.convert_utm_to_latlng:
         print('convert_utm_to_latlng---START')
         print(convert_utm_to_latlng(args.zone, args.easting, args.northing))
         print('convert_utm_to_latlng---END')
+
+    if args.parsefmow:
+        print('parse_fmow_dataset---START')
+        print(parse_fmow_dataset(root_folder=args.parsefmowfolder, csv_file=args.parsefmowfile))
+        print('parse_fmow_dataset---END')
