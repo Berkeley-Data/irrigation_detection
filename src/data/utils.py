@@ -109,6 +109,56 @@ def parse_fmow_dataset(root_folder = "/workspace/app/data/raw/fMoW/fmow-rgb", cs
                 [list(image_file.values())[0], ltln_data["latitude"], ltln_data["longitude"], ltln_data["timestamp"],
                  ltln_data["country_code"]])
 
+# Parse the BigEarthNet dataset metadata files and create a csv file indicating image name, converted location, and timestamp
+def parse_bigenet_dataset(root_folder = "/workspace/app/data/raw/BigEarthNet-v1.0", csv_file="train-testing.csv"):
+    folder_path_list = []
+    csv_file_to_parse = os.path.join("/workspace/app/data/raw/bigearthnet-models/splits", csv_file)
+    if not os.path.exists(csv_file_to_parse):
+        print('ERROR: file', csv_file_to_parse, 'does not exist')
+
+    splits = glob(f"{csv_file_to_parse}")
+    patch_names_list = []
+    for file in splits:
+        print(file)
+        with open(file, 'r') as fp:
+            csv_reader = csv.reader(fp, delimiter=',')
+            for row in csv_reader:
+                patch_names_list.append(row[0].strip())
+    print(patch_names_list)
+
+    # writing to csv file
+    output_file = csv_file.split('.')[0]+"_lat_lon_time.csv"
+    with open(output_file, 'w', newline='') as csvfile:
+        # creating a csv writer object
+        csvwriter = csv.writer(csvfile)
+        # Parse each json file
+        lt_ln_data = {}
+        for patch_file in patch_names_list:
+            print(patch_file)
+            patch_path = os.path.join(root_folder, patch_file,patch_file+"_labels_metadata.json")
+            print("loading file ",os.path.abspath(patch_path))
+            with open(os.path.abspath(patch_path)) as f:
+                patch = json.load(f)
+                utm_coordinates = patch["coordinates"]
+                ulx = utm_coordinates["ulx"]
+                uly = utm_coordinates["uly"]
+                projection = patch["projection"].split(",")[0]
+                zone = projection.split(" ")[-1].strip()[:-1]
+                # The value will be 29N. So, remove the last part
+                zone = zone[:-2]
+                #print("Zone: ",zone)
+                latitude, longitude = convert_utm_to_latlng(int(zone), ulx, uly)
+                #print("coordinates",latitude, longitude)
+                #print("acquisition_date", patch["acquisition_date"])
+                lt_ln_data[patch_file] = {"latitude":latitude, "longitude":longitude,
+                                                  "timestamp":patch["acquisition_date"]}
+
+        for patch_file in patch_names_list:
+            ltln_data = lt_ln_data[patch_file]
+            csvwriter.writerow(
+                [patch_file, ltln_data["latitude"], ltln_data["longitude"], ltln_data["timestamp"]])
+
+
 if __name__ == "__main__":
     def str2bool(v):
         if isinstance(v, bool):
@@ -140,6 +190,14 @@ if __name__ == "__main__":
     parser.add_argument('-pfmfl', '--parsefmowfile', type=str,
                         help="fmow file")
 
+    # parse_bigenet_dataset
+    parser.add_argument('-pben', '--parseben', default=False, type=str2bool,
+                        help="whether parse fmow file")
+    parser.add_argument('-pbenfd', '--parsebenfolder', default="/workspace/app/data/raw/BigEarthNet-v1.0", type=str,
+                        help="fmow file")
+    parser.add_argument('-pbenfl', '--parsebenfile', type=str,
+                        help="bigearthnet file (train.csv/val.csv/test.csv)")
+
     args = parser.parse_args()
 
     if args.convert_utm_to_latlng:
@@ -151,3 +209,8 @@ if __name__ == "__main__":
         print('parse_fmow_dataset---START')
         print(parse_fmow_dataset(root_folder=args.parsefmowfolder, csv_file=args.parsefmowfile))
         print('parse_fmow_dataset---END')
+
+    if args.parseben:
+        print('parse_bigenet_dataset---START')
+        print(parse_bigenet_dataset(root_folder=args.parsebenfolder, csv_file=args.parsebenfile))
+        print('parse_bigenet_dataset---END')
