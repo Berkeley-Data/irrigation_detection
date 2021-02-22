@@ -82,7 +82,8 @@ def parse_fmow_dataset(root_folder = "/workspace/app/data/raw/fMoW/fmow-rgb", cs
     print(patch_names_list)
 
     # writing to csv file
-    with open("temp.csv", 'w', newline='') as csvfile:
+    output_file = csv_file.split('.')[0] + "_lat_lon_time.csv"
+    with open(output_file, 'w', newline='') as csvfile:
         # creating a csv writer object
         csvwriter = csv.writer(csvfile)
         # Parse each json file
@@ -94,7 +95,7 @@ def parse_fmow_dataset(root_folder = "/workspace/app/data/raw/fMoW/fmow-rgb", cs
                 print(patch_file)
                 patch_path = os.path.join(root_folder, patch_file)
                 print("loading file ",os.path.abspath(patch_path))
-                with open(os.path.abspath(patch_path)) as f:
+                with open(patch_path) as f:
                     patch = json.load(f)
                     raw_location = patch["bounding_boxes"][0]["raw_location"]
                     coordinates_string = raw_location[10:].split(',')
@@ -113,6 +114,7 @@ def parse_fmow_dataset(root_folder = "/workspace/app/data/raw/fMoW/fmow-rgb", cs
 def parse_bigenet_dataset(root_folder = "/workspace/app/data/raw/BigEarthNet-v1.0", csv_file="train-testing.csv"):
     folder_path_list = []
     csv_file_to_parse = os.path.join("/workspace/app/data/raw/bigearthnet-models/splits", csv_file)
+    
     if not os.path.exists(csv_file_to_parse):
         print('ERROR: file', csv_file_to_parse, 'does not exist')
 
