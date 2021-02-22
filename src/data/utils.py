@@ -136,8 +136,8 @@ def parse_bigenet_dataset(root_folder = "/workspace/app/data/raw/BigEarthNet-v1.
         for patch_file in patch_names_list:
             print(patch_file)
             patch_path = os.path.join(root_folder, patch_file,patch_file+"_labels_metadata.json")
-            print("loading file ",os.path.abspath(patch_path))
-            with open(os.path.abspath(patch_path)) as f:
+            print("loading file ",patch_path)
+            with open(patch_path) as f:
                 patch = json.load(f)
                 utm_coordinates = patch["coordinates"]
                 ulx = utm_coordinates["ulx"]
