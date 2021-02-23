@@ -1,8 +1,5 @@
 import argparse
-# import seaborn as sns
-# from matplotlib.cm import get_cmap
 import cv2
-import json
 import numpy as np
 import os
 import pandas as pd
@@ -10,45 +7,21 @@ import tensorflow as tf
 import wandb
 from tensorflow.keras.applications import ResNet50, ResNet101V2, Xception, InceptionV3
 from tensorflow.keras.preprocessing import image
+
 from wandb.keras import WandbCallback
 
-from utils import *
-import constants
+import sys
 
+# import local helpers
+sys.path.append('/workspace/app/src')
 
-import tensorflow_addons as tfa
+from data.dataset_helper import *
+import params
 
 # sns.set()
 # Set Paths
-BASE_PATH = '/workspace/app'
-OUTPUT_PATH = os.path.join(BASE_PATH, 'models/supervised')
-TFR_PATH = os.path.join(BASE_PATH, 'data/processed')
 
-
-def get_training_dataset(training_filenames, batch_size, num_classes):
-    return get_batched_dataset(training_filenames, batch_size, shuffle=True, num_classes=num_classes)
-
-
-def get_validation_dataset(validation_filenames, batch_size, num_classes):
-    return get_batched_dataset(validation_filenames, batch_size, shuffle=False, num_classes=num_classes)
-
-
-METRICS = [
-    tf.keras.metrics.TruePositives(name='tp'),
-    tf.keras.metrics.FalsePositives(name='fp'),
-    tf.keras.metrics.TrueNegatives(name='tn'),
-    tf.keras.metrics.FalseNegatives(name='fn'),
-    tf.keras.metrics.BinaryAccuracy(name='accuracy'),
-    tf.keras.metrics.Precision(name='precision'),
-    tf.keras.metrics.Recall(name='recall'),
-    tf.keras.metrics.AUC(name='auc'),
-    # tfa.metrics.F1Score(name='tfa_f1', num_classes=43),
-    # tfa.metrics.FBetaScore(name='tfa_f05', num_classes=1, beta=0.5),
-    # tfa.metrics.FBetaScore(name='tfa_f2', num_classes=43),    # tfa.metrics.FBetaScore(name='tfa_f2', num_classes=1, beta=2.0), beta=2.0),
-    # tfa.metrics.FBetaScore(name='tfa_f6', num_classes=1, beta=6.0)
-]
-
-def build_model(imported_model, use_pretrain, output_activation, metrics=METRICS, output_bias=None, num_classes=1):
+def build_model(imported_model, use_pretrain, output_activation, metrics, output_bias=None, num_classes=1):
     if output_bias is not None:
         output_bias = tf.keras.initializers.Constant(output_bias)
     if use_pretrain:
@@ -142,41 +115,36 @@ def _random_apply(func, x, p):
 
 def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrain=False, augment=False,
               percent=10, evaluate=False, downsample="50/50", activation="sigmoid", num_classes=1):
-
-    # "50/50, 10/90, no"
-    test_filenames = os.path.join(TFR_PATH, "original", constants.IMBALANCED_TEST_FILENAMES)
-    test_size = constants.IMBALANCED_TEST_SIZE
-
     if downsample == "50/50":
         # using balanced dataset
-        train_size = (constants.BALANCED_TRAIN_SIZE // 100) * percent
-        val_size = (constants.BALANCED_VAL_SIZE // 100) * percent
+        train_size = (params.BALANCED_TRAIN_SIZE // 100) * percent
+        val_size = (params.BALANCED_VAL_SIZE // 100) * percent
         # test_size = constants.BALANCED_TEST_SIZE
 
-        training_filenames = os.path.join(TFR_PATH, "50-50/irrigation", constants.BALANCED_TRAINING_FILENAMES)
-        validation_filenames = os.path.join(TFR_PATH, "50-50/irrigation", constants.BALANCED_VALIDATION_FILENAMES)
-        # test_filenames = os.path.join(TFR_PATH, "50-50/irrigation", constants.BALANCED_TEST_FILENAMES)
+        training_filenames = os.path.join(params.TFR_PATH, "50-50/irrigation", params.BALANCED_TRAINING_FILENAMES)
+        validation_filenames = os.path.join(params.TFR_PATH, "50-50/irrigation", params.BALANCED_VALIDATION_FILENAMES)
+        # test_filenames = os.path.join(params.TFR_PATH, "50-50/irrigation", constants.BALANCED_TEST_FILENAMES)
     elif downsample == "10/90":
         # using less balanced dataset
-        train_size = (constants.DOWNSAMPLED_TRAIN_SIZE // 100) * percent
-        val_size = (constants.DOWNSAMPLED_VAL_SIZE // 100) * percent
+        train_size = (params.DOWNSAMPLED_TRAIN_SIZE // 100) * percent
+        val_size = (params.DOWNSAMPLED_VAL_SIZE // 100) * percent
         # test_size = constants.BALANCED_TEST_SIZE
 
-        training_filenames = os.path.join(TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_TRAINING_FILENAMES)
-        validation_filenames = os.path.join(TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_VALIDATION_FILENAMES)
-        # test_filenames = os.path.join(TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_TEST_FILENAMES)
+        training_filenames = os.path.join(params.TFR_PATH, "10-90/irrigation", params.DOWNSAMPLED_TRAINING_FILENAMES)
+        validation_filenames = os.path.join(params.TFR_PATH, "10-90/irrigation",
+                                            params.DOWNSAMPLED_VALIDATION_FILENAMES)
+        # test_filenames = os.path.join(params.TFR_PATH, "10-90/irrigation", constants.DOWNSAMPLED_TEST_FILENAMES)
     else:
         upweight = False
         # using imbalanced dataset
-        train_size = (constants.IMBALANCED_TRAIN_SIZE // 100) * percent
-        val_size = (constants.IMBALANCED_VAL__SIZE // 100) * percent
+        train_size = (params.IMBALANCED_TRAIN_SIZE // 100) * percent
+        val_size = (params.IMBALANCED_VAL__SIZE // 100) * percent
 
-        training_filenames = os.path.join(TFR_PATH, "original", constants.IMBALANCED_TRAINING_FILENAMES)
-        validation_filenames = os.path.join(TFR_PATH, "original", constants.IMBALANCED_VALIDATION_FILENAMES)
+        training_filenames = os.path.join(params.TFR_PATH, "original", params.IMBALANCED_TRAINING_FILENAMES)
+        validation_filenames = os.path.join(params.TFR_PATH, "original", params.IMBALANCED_VALIDATION_FILENAMES)
 
     wandb.config.update({'dataset.train': train_size})
     wandb.config.update({'dataset.val': val_size})
-    wandb.config.update({'dataset.test': test_size})
 
     arch_dict = {'ResNet50': ResNet50,
                  'ResNet101V2': ResNet101V2,
@@ -185,11 +153,9 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
 
     architecture = arch_dict[arch]
 
-
     if upweight:
-
         # approximation
-        downsampling_factor = constants.IMBALANCED_TRAIN_SIZE // constants.BALANCED_TRAIN_SIZE
+        downsampling_factor = params.IMBALANCED_TRAIN_SIZE // params.BALANCED_TRAIN_SIZE
         # wandb.config.update({'downsample': downsampling_factor})
 
         # class weight = original weight * downsampling factor
@@ -209,8 +175,8 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
     else:
         class_weight = None
 
-    training_data = get_training_dataset(training_filenames, batch_size=batch_size, num_classes=num_classes)
-    val_data = get_validation_dataset(validation_filenames, batch_size=batch_size, num_classes=num_classes)
+    training_data = get_batched_dataset(training_filenames, batch_size, shuffle=True, num_classes=num_classes)
+    val_data = get_batched_dataset(validation_filenames, batch_size=batch_size, shuffle=False, num_classes=num_classes)
 
     steps_per_epoch = train_size // batch_size
     validation_steps = val_size // batch_size
@@ -236,7 +202,8 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
     model = build_model(imported_model=architecture,
                         use_pretrain=pretrain,
                         output_activation=activation,
-                        num_classes=num_classes
+                        num_classes=num_classes,
+                        metrics=params.METRICS
                         )
 
     if augment:
@@ -272,25 +239,26 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
 
     else:
         model.fit(training_data.repeat(),
-            epochs=epochs,
-            steps_per_epoch=steps_per_epoch,
-            validation_data=val_data.repeat(),
-            validation_steps=validation_steps,
-            callbacks=[time_callback, early_stop, WandbCallback()],
-            class_weight=class_weight)
+                  epochs=epochs,
+                  steps_per_epoch=steps_per_epoch,
+                  validation_data=val_data.repeat(),
+                  validation_steps=validation_steps,
+                  callbacks=[time_callback, early_stop, WandbCallback()],
+                  class_weight=class_weight)
 
-    # df.to_pickle(f'{OUTPUT_PATH}/{name}.pkl')
-    # model.save(f'{OUTPUT_PATH}/{name}.h5')
+    # Save model to wandb
+    model.save(os.path.join(wandb.run.dir, "model.h5"))
 
     if evaluate:
-        test_data = get_validation_dataset(test_filenames, batch_size=batch_size, num_classes=num_classes)
-        test_steps = test_size // batch_size
+        test_data = get_batched_dataset(params.TEST_FILENAMES, batch_size=batch_size, shuffle=False, num_classes=num_classes)
+        test_steps = params.TEST_SIZE // batch_size
 
         # callback on evaluation seems to override validation results (maybe that is good things)
         # perf = model.evaluate(test_data, batch_size = batch_size, steps=test_steps, callbacks=[WandbCallback()])
-        perf = model.evaluate(test_data, batch_size = batch_size, steps=test_steps, return_dict=False)
-
+        perf = model.evaluate(test_data, batch_size=batch_size, steps=test_steps, return_dict=False)
         print(perf)
+
+        wandb.config.update({'dataset.test': params.TEST_SIZE})
 
         wandb.run.summary["test_loss"] = perf[0]
         wandb.run.summary["test_tp"] = perf[1]
@@ -309,12 +277,10 @@ def run_model(batch_size=32, epochs=50, upweight=False, arch="ResNet50", pretrai
         if (perf[6] + perf[7]) == 0:
             wandb.run.summary["test_f1"] = 0
         else:
-            wandb.run.summary["test_f1"] = 2*perf[6]*perf[7]/(perf[6] + perf[7])
-
-    # Save model to wandb
-    model.save(os.path.join(wandb.run.dir, "model.h5"))
+            wandb.run.summary["test_f1"] = 2 * perf[6] * perf[7] / (perf[6] + perf[7])
 
     return
+
 
 if __name__ == '__main__':
 
@@ -327,6 +293,7 @@ if __name__ == '__main__':
             return False
         else:
             raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
     parser = argparse.ArgumentParser(description='Script for running different supervised classifiers')
     parser.add_argument('-a', '--architecture', choices=['ResNet50', 'ResNet101V2', 'Xception', 'InceptionV3'],
@@ -347,7 +314,7 @@ if __name__ == '__main__':
     #                     help="use imagenet pretrained model")
     parser.add_argument('-d', '--downsample', default="50/50", type=str,
                         help="50/50, 10/90, no")
-    parser.add_argument('-c', '--classes', default="binary", type=int,
+    parser.add_argument('-c', '--classes', default="1", type=int,
                         help="bnumber of classes. 1 or 43")
     parser.add_argument('-o', '--output_activation', default='sigmoid', choices=['sigmoid', 'softmax', 'relu', 'tanh'],
                         help='output layer of activation func to use for classification')
@@ -374,5 +341,3 @@ if __name__ == '__main__':
               activation=args.output_activation,
               num_classes=args.classes
               )
-
-

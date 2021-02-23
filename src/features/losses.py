@@ -31,3 +31,4 @@ def _dot_simililarity_dim2(x, y):
     # y shape: (1, C, 2N)
     # v shape: (N, 2N)
     return v
+
