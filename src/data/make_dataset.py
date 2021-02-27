@@ -222,6 +222,7 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
 
     irrigated_examples = []
     nonirrigated_examples = []
+    all_examples = []
     missing_count = 0
     for patch_name in tqdm(patch_names_list[0]):
         patch_folder_path = os.path.join(root_folder, patch_name)
@@ -239,6 +240,8 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
             irrigated_examples.append(patch_folder_path)
         else:
             nonirrigated_examples.append(patch_folder_path)
+        # Add all
+        all_examples.append(patch_folder_path)
 
     # Check for Vineyards
     vy_examples = []
@@ -267,6 +270,7 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
     # New: This was added as the next code directly reads the csv and creates a dataframe
     pos_df = pd.DataFrame(irrigated_examples, columns=['file'])
     neg_df = pd.DataFrame(nonirrigated_examples, columns=['file'])
+    all_df = pd.DataFrame(all_examples, columns=['file'])
     if ratio == '50-50':
         pos_df.to_csv(big_earth_models_folder + 'splits/positive_' + split + '.csv')
         neg_df.to_csv(big_earth_models_folder + 'splits/negative_' + split + '.csv')
@@ -279,7 +283,11 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
         # Read back
         pos_irr_df = pd.read_csv(big_earth_models_folder + 'splits/positive_10_90_' + split + '.csv')
         neg_irr_df = pd.read_csv(big_earth_models_folder + 'splits/negative_10_90_' + split + '.csv')
-    else: #'64', '128', '256', '512', '1024'
+    elif ratio.startswith('u'): #'u64', 'u128', 'u256', 'u512', 'u1024' unbalanced
+        all_df.to_csv(big_earth_models_folder + 'splits/all_'+ratio+'_'+ split + '.csv')
+        # Read back
+        all_df = pd.read_csv(big_earth_models_folder + 'splits/all_'+ratio+'_'+ split + '.csv')
+    else: #'64', '128', '256', '512', '1024' balanced
         pos_df.to_csv(big_earth_models_folder + 'splits/positive_'+ratio+'_'+ split + '.csv')
         neg_df.to_csv(big_earth_models_folder + 'splits/negative_'+ratio+'_'+ split + '.csv')
         # Read back
@@ -289,23 +297,24 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
 
     # # Create Data sets for finetuning. Make total dataset size divisible by 32 or 64 for easy batching
 
-    len(pos_df)
+    # Unused code
+    #len(pos_df)
 
-    pos_df_1_percent = pos_irr_df.sample(frac=0.0065)
-    pos_df_3_percent = pos_irr_df.sample(frac=0.0258)
-    pos_df_10_percent = pos_irr_df.sample(frac=0.103)
+    #pos_df_1_percent = pos_irr_df.sample(frac=0.0065)
+    #pos_df_3_percent = pos_irr_df.sample(frac=0.0258)
+    #pos_df_10_percent = pos_irr_df.sample(frac=0.103)
 
-    print(len(pos_df_1_percent))
-    print(len(pos_df_3_percent))
-    print(len(pos_df_10_percent))
+    #print(len(pos_df_1_percent))
+    #print(len(pos_df_3_percent))
+    #print(len(pos_df_10_percent))
 
-    sample_frac_1p = len(pos_df_1_percent) / len(neg_irr_df)
-    sample_frac_3p = len(pos_df_3_percent) / len(neg_irr_df)
-    sample_frac_10p = len(pos_df_10_percent) / len(neg_irr_df)
+    #sample_frac_1p = len(pos_df_1_percent) / len(neg_irr_df)
+    #sample_frac_3p = len(pos_df_3_percent) / len(neg_irr_df)
+    #sample_frac_10p = len(pos_df_10_percent) / len(neg_irr_df)
 
-    subset_neg_df_1p = neg_irr_df.sample(frac=sample_frac_1p)
-    subset_neg_df_3p = neg_irr_df.sample(frac=sample_frac_3p)
-    subset_neg_df_10p = neg_irr_df.sample(frac=sample_frac_10p)
+    #subset_neg_df_1p = neg_irr_df.sample(frac=sample_frac_1p)
+    #subset_neg_df_3p = neg_irr_df.sample(frac=sample_frac_3p)
+    #subset_neg_df_10p = neg_irr_df.sample(frac=sample_frac_10p)
 
     neg_ir_df = None
 
@@ -315,6 +324,24 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
     elif ratio == '10-90':
         # Assume current positive as 10%, take 90% negative
         neg_ir_df = neg_df.sample(n=len(pos_df) * 9)
+    elif ratio.startswith('u'):  # 'u64', 'u128', 'u256', 'u512', 'u1024' unbalanced
+        all_df = all_df.sample(n=int(ratio[1:]))
+        # Initialize the positive and negative cache
+        unsampled_values = []
+        pos_unsampled_values = []
+        neg_unsampled_values = []
+        for i, j in all_df.iterrows():
+            unsampled_values.append(j['file'])
+
+        for sampled_val in unsampled_values:
+            if sampled_val in irrigated_examples:
+                pos_unsampled_values.append(sampled_val)
+            else:
+                neg_unsampled_values.append(sampled_val)
+        pos_df = pd.DataFrame(pos_unsampled_values, columns=['file'])
+        print("Count of Positive Irrigation Samples ", len(pos_unsampled_values))
+        neg_ir_df = pd.DataFrame(neg_unsampled_values, columns=['file'])
+        print("Count of Negative Irrigation Samples ", len(neg_unsampled_values))
     else: #'64', '128', '256', '512', '1024'
         pos_df = pos_df.sample(n=int(ratio))
         neg_ir_df = neg_df.sample(n=len(pos_df))
@@ -329,6 +356,9 @@ def preprocess_tfrecords_labelled(split, ratio = '50-50', include_vineyard = Fal
     elif ratio == '10-90':
         balanced_df.to_csv(f'{big_earth_models_folder}splits/balanced_10_90_{split}.csv')
         splits = glob(f'{big_earth_models_folder}splits/balanced_10_90_{split}.csv')
+    elif ratio.startswith('u'):  # 'u64', 'u128', 'u256', 'u512', 'u1024' unbalanced
+        balanced_df.to_csv(f'{big_earth_models_folder}splits/{ratio}_{split}.csv')
+        splits = glob(f'{big_earth_models_folder}splits/{ratio}_{split}.csv')
     else: #'64', '128', '256', '512', '1024'
         balanced_df.to_csv(f'{big_earth_models_folder}splits/balanced_{ratio}_{split}.csv')
         splits = glob(f'{big_earth_models_folder}splits/balanced_{ratio}_{split}.csv')
@@ -436,7 +466,9 @@ if __name__ == "__main__":
                         help="whether to create tfrecords with labelled")
     parser.add_argument('-s', '--split', default='train', type=str,
                         help="which dataset split to create (train,val,test)")
-    parser.add_argument('-sr', '--ratio', default='50-50', choices=['50-50', '10-90', '64', '128', '256', '512', '1024'],
+    # U before a number indicates unsampled total count.
+    parser.add_argument('-sr', '--ratio', default='50-50', choices=['50-50', '10-90', '64', '128', '256', '512', '1024',
+                                                                    'u32', 'u64', 'u128', 'u256', 'u512', 'u1024'],
                         help='Split ratio')
 
     # Shard the data
